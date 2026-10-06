@@ -82,3 +82,21 @@ def to_markdown(report: Dict) -> str:
     out += ["", "| case | status | completed | tools ok | adherent | grounded | steps | tokens |", "|---|---|---|---|---|---|---|---|"]
     out += [f"| {r['case']} | {r['status']} | {r['completed']} | {r['tool_correct']} | {r['adherent']} | {r['grounded']} | {r['steps']} | {r['tokens']} |" for r in report["rows"]]
     return "\n".join(out)
+
+
+def evaluate_run(state: RunState) -> Dict:
+    """Case-free, deterministic checks that apply to ANY finished run (used for the per-run 'evaluation' event):
+    did it complete, are the numbers in the answer supported by the objective/tool outputs, how many tool calls failed."""
+    tool_steps = [s for s in state.steps if s.kind == "tool"]
+    evidence = set(_numbers(state.objective))
+    for s in tool_steps:
+        if s.detail.get("ok"):
+            evidence |= _numbers(s.detail.get("output", ""))
+    ans = state.final_answer or ""
+    ungrounded = sorted(_numbers(ans) - evidence) if state.status == "completed" else []
+    return {
+        "completed": state.status == "completed", "status": state.status, "stop_reason": state.stop_reason,
+        "grounded": (not ungrounded) if state.status == "completed" else None, "ungrounded_numbers": ungrounded,
+        "tool_calls": len(tool_steps), "tool_failures": sum(1 for s in tool_steps if not s.detail.get("ok")),
+        "model_calls": sum(1 for s in state.steps if s.kind == "model"), "tokens": state.usage.total,
+    }

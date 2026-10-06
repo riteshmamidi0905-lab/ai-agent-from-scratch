@@ -31,8 +31,9 @@ def _clean(v):
 
 
 class Tracer:
-    def __init__(self, run_id: str = "run", sink: Optional[str] = None, clock=time.monotonic):
+    def __init__(self, run_id: str = "run", sink: Optional[str] = None, clock=time.monotonic, listeners=None):
         self.run_id, self.sink, self.clock = run_id, sink, clock
+        self.listeners = list(listeners or [])          # callables(event): how a service streams events out; a failing listener never breaks a run
         self.events: List[Dict[str, Any]] = []
         self._t0 = clock()
 
@@ -42,6 +43,11 @@ class Tracer:
         if self.sink:
             with open(self.sink, "a") as f:
                 f.write(json.dumps(ev, default=str) + "\n")
+        for fn in self.listeners:
+            try:
+                fn(ev)
+            except Exception:                            # noqa: BLE001
+                pass
         return ev
 
     @contextmanager

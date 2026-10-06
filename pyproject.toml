@@ -4,12 +4,19 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai-agent-from-scratch"
-version = "0.9.1"
+version = "0.12.0"
 description = "An AI agent runtime built from scratch: tool calling, loop, state, memory, planning, evals, reliability, security, tracing."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
-dependencies = []                      # the core runtime is standard-library only
+dependencies = []                      # the core runtime (agent/) is standard-library only
+
+[project.optional-dependencies]
+service = ["fastapi>=0.110", "uvicorn[standard]>=0.29", "pydantic>=2.6", "psycopg[binary,pool]>=3.1"]
+dev = ["httpx>=0.27"]                  # FastAPI TestClient
 
 [tool.setuptools.packages.find]
-include = ["agent*"]
+include = ["agent*", "service*"]
+
+[tool.setuptools.package-data]
+service = ["migrations/*.sql"]

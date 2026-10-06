@@ -3,7 +3,8 @@ on: [push, pull_request]
 permissions:
   contents: read
 jobs:
-  test:
+  core:
+    name: core runtime (stdlib only, py${{ matrix.python }})
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -13,5 +14,29 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
-      - run: python -m unittest discover -s tests
+      - name: Core tests need no third-party packages (service tests skip themselves)
+        run: python -m unittest discover -s tests -v
       - run: python examples/run_eval.py
+  service:
+    name: service + postgres integration
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: agent
+          POSTGRES_PASSWORD: agent
+          POSTGRES_DB: agent_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U agent -d agent_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      AGENT_TEST_DATABASE_URL: postgresql://agent:agent@localhost:5432/agent_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ".[service,dev]"
+      - run: python -m unittest discover -s tests -v

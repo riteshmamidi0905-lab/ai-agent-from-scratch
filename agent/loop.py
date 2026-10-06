@@ -42,6 +42,7 @@ class Agent:
         tools = self.registry.specs(self.policy.allow)
 
         def once():
+            self.tracer.emit("model_request", step=len(state.steps), messages=len(self.memory.window()))
             with self.tracer.span("model_call", step=len(state.steps)) as info:
                 r = self.model.complete(self.memory.window(), tools)
                 info.update(prompt_tokens=r.usage.prompt_tokens, completion_tokens=r.usage.completion_tokens, tool_calls=len(r.tool_calls))
@@ -52,6 +53,7 @@ class Agent:
     # -- one tool call: dedupe → policy → execute → untrusted wrap ----------------------------------------------
     def _tool_call(self, state: RunState, call) -> ToolResult:
         tool = self.registry.get(call.name)
+        self.tracer.emit("tool_requested", tool=call.name, call_id=call.id, args=call.args)
         key = call.id
         if key in state.tool_results:                                   # same call id seen again: do not run twice
             r = state.tool_results[key]

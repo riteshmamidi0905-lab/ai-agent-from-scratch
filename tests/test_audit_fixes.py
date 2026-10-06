@@ -72,3 +72,23 @@ class AuditFixTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class V10CoreHookTests(unittest.TestCase):
+    def test_listeners_receive_events_and_failures_are_isolated(self):
+        from agent.trace import Tracer
+        got = []
+        def bad(ev): raise RuntimeError("listener bug")
+        tr = Tracer(listeners=[bad, got.append])
+        a = Agent(ScriptedModel([call("1", "calculator", expression="2+2"), "4"]), default_registry(), tracer=tr, sleep=lambda s: None)
+        a.run("compute 2 + 2")
+        types = [e["type"] for e in got]
+        self.assertEqual(types[:3], ["model_request", "model_call", "tool_requested"])
+        self.assertIn("tool_call", types)
+
+    def test_evaluate_run(self):
+        from agent.evals import evaluate_run
+        a = Agent(ScriptedModel([call("1", "calculator", expression="2+2"), "The answer is 5."]), default_registry(), sleep=lambda s: None)
+        ev = evaluate_run(a.run("compute 2 + 2"))
+        self.assertTrue(ev["completed"]); self.assertFalse(ev["grounded"]); self.assertEqual(ev["ungrounded_numbers"], [5.0])
+        self.assertEqual((ev["tool_calls"], ev["tool_failures"]), (1, 0))
