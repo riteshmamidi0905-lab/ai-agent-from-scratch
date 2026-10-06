@@ -1,0 +1,36 @@
+# API + PostgreSQL. Secrets come from the environment (see .env.example); nothing secret is baked into the image or this file.
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: agent
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: agent
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agent -d agent"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+  api:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://agent:${POSTGRES_PASSWORD}@db:5432/agent
+      AGENT_API_TOKEN: ${AGENT_API_TOKEN:?set AGENT_API_TOKEN}
+      AGENT_PROVIDER: ${AGENT_PROVIDER:-rule}
+      AGENT_MODEL: ${AGENT_MODEL:-gpt-4o-mini}
+      AGENT_BASE_URL: ${AGENT_BASE_URL:-https://api.openai.com/v1}
+      AGENT_API_KEY: ${AGENT_API_KEY:-}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "8000:8000"
+    volumes:
+      - workspace:/data/workspace
+    restart: unless-stopped
+volumes:
+  dbdata:
+  workspace:

@@ -90,11 +90,11 @@ class TraceEvalTests(unittest.TestCase):
                  EvalCase("wrong expectation", "compute 1 + 1", ["convert_units"], [])]
         rep = run_suite(self.make_agent, cases)
         rows = {r["case"]: r for r in rep["rows"]}
-        self.assertTrue(rows["math"]["completed"] and rows["math"]["tool_correct"] and rows["math"]["adherent"] and rows["math"]["grounded"])
+        self.assertTrue(rows["math"]["status_ok"] and rows["math"]["tool_correct"] and rows["math"]["adherent"] and rows["math"]["grounded"])
         self.assertTrue(rows["units"]["adherent"])
         self.assertFalse(rows["wrong expectation"]["tool_correct"])
         self.assertAlmostEqual(rep["aggregate"]["tool_correctness"], 0.75)
-        self.assertIn("| completion_rate |", to_markdown(rep))
+        self.assertIn("| status_as_expected_rate |", to_markdown(rep))
 
     def test_groundedness_catches_invented_numbers(self):
         m = ScriptedModel([ModelResponse(tool_calls=[ToolCall("a", "calculator", {"expression": "6*7"})]), "The answer is 43."])
@@ -107,7 +107,7 @@ class TraceEvalTests(unittest.TestCase):
         m = ScriptedModel([ModelResponse(tool_calls=[ToolCall(str(i), "calculator", {"expression": "1+1"})]) for i in range(5)])
         st = Agent(m, default_registry(), sleep=lambda s: None).run("loop")
         r = score(EvalCase("loop", "loop", expect_status="stopped"), st, 1.0)
-        self.assertTrue(r["completed"]); self.assertEqual(r["stop_reason"], "loop_detected")
+        self.assertTrue(r["status_ok"]); self.assertFalse(r["reached_final_answer"]); self.assertEqual(r["stop_reason"], "loop_detected")
 
 
 if __name__ == "__main__":

@@ -11,7 +11,7 @@ from agent.eval_cases import CASES
 
 if __name__ == "__main__":
     rep = run_suite(lambda: Agent(RuleModel(), default_registry(), sleep=lambda s: None), CASES)
-    md = "# Eval report (offline RuleModel — measures the runtime, not an LLM)\n\n" + to_markdown(rep) + "\n"
+    md = "# Eval report — deterministic, offline (RuleModel + scripted misbehaving models). Measures the RUNTIME, not any LLM.\n\n" + to_markdown(rep) + "\n"
     out = os.path.join(os.path.dirname(__file__), "..", "docs", "eval-report.md")
     open(out, "w").write(md)
     print(md)

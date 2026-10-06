@@ -113,7 +113,7 @@ class RunLifecycleTests(ApiBase):
 
     def test_eval_endpoint_runs_suite_and_persists(self):
         r = self.c.post("/v1/evals/run").json()
-        self.assertEqual(r["aggregate"]["cases"], 6)
+        self.assertEqual(r["aggregate"]["cases"], 13)
         self.assertEqual(self.c.get("/v1/evals").json()[0]["id"], r["id"])
 
 

@@ -2,7 +2,7 @@
 
 Evaluating an agent is different from evaluating a model: the unit under test is a RUN. We score each run on things that are
 checkable without a judge model, and report them per case and in aggregate:
-  completed            did the run reach a final answer (not failed/stopped/escalated)?
+  status_ok            did the run end in the status the case EXPECTS? (a runaway agent that is stopped counts as OK for a case that expects 'stopped')
   tool_correct         did it use exactly the expected tools, in order?
   adherent             does the answer contain required text and avoid forbidden text?
   grounded             every number in the answer appears in a tool output or the objective (catches invented figures)
@@ -28,25 +28,29 @@ _NUM = re.compile(r"-?\d+(?:\.\d+)?")
 class EvalCase:
     name: str
     objective: str
-    expected_tools: List[str] = field(default_factory=list)
+    expected_tools: Optional[List[str]] = field(default_factory=list)      # None = don't check
     must_include: List[str] = field(default_factory=list)
     must_not_include: List[str] = field(default_factory=list)
     expect_status: str = "completed"
+    check: Optional[Callable[[object, RunState], bool]] = None     # extra invariant, e.g. 'no file was written'; gets (agent, final state)
+    agent_factory: Optional[Callable[[], object]] = None     # per-case agent (e.g. a scripted misbehaving model); default = the suite's factory
 
 
 def _numbers(s: str) -> set:
     return {round(float(x), 3) for x in _NUM.findall(s.replace(",", ""))}
 
 
-def score(case: EvalCase, state: RunState, latency_ms: float) -> Dict:
+def score(case: EvalCase, state: RunState, latency_ms: float, agent: object = None) -> Dict:
     tools = [s.detail["tool"] for s in state.steps if s.kind == "tool"]
     ans = state.final_answer or ""
     evidence = _numbers(case.objective).union(*[_numbers(s.detail.get("output", "")) for s in state.steps if s.kind == "tool" and s.detail.get("ok")]) if state.steps else _numbers(case.objective)
     ungrounded = sorted(_numbers(ans) - evidence)
     return {
         "case": case.name, "status": state.status, "stop_reason": state.stop_reason,
-        "completed": state.status == case.expect_status,
-        "tool_correct": tools == case.expected_tools,
+        "status_ok": state.status == case.expect_status, "expected_status": case.expect_status,
+        "reached_final_answer": state.status == "completed",
+        "invariant_ok": True if case.check is None else bool(case.check(agent, state)),
+        "tool_correct": True if case.expected_tools is None else tools == case.expected_tools,
         "adherent": all(x.lower() in ans.lower() for x in case.must_include) and not any(x.lower() in ans.lower() for x in case.must_not_include),
         "grounded": not ungrounded if case.expect_status == "completed" else None,
         "ungrounded_numbers": ungrounded,
@@ -58,16 +62,18 @@ def score(case: EvalCase, state: RunState, latency_ms: float) -> Dict:
 def run_suite(make_agent: Callable[[], "object"], cases: List[EvalCase]) -> Dict:
     rows = []
     for c in cases:
-        agent = make_agent()
+        agent = (c.agent_factory or make_agent)()
         t0 = time.perf_counter()
         st = agent.run(c.objective)
-        rows.append(score(c, st, (time.perf_counter() - t0) * 1000))
+        rows.append(score(c, st, (time.perf_counter() - t0) * 1000, agent))
     n = len(rows) or 1
     lat = sorted(r["latency_ms"] for r in rows)
     agg = {
         "cases": len(rows),
-        "completion_rate": sum(r["completed"] for r in rows) / n,
+        "status_as_expected_rate": sum(r["status_ok"] for r in rows) / n,
+        "final_answer_rate": sum(r["reached_final_answer"] for r in rows) / n,
         "tool_correctness": sum(r["tool_correct"] for r in rows) / n,
+        "invariants_held": sum(r["invariant_ok"] for r in rows) / n,
         "instruction_adherence": sum(r["adherent"] for r in rows) / n,
         "groundedness": (lambda g: sum(g) / len(g) if g else None)([r["grounded"] for r in rows if r["grounded"] is not None]),
         "latency_ms_mean": round(statistics.mean(lat), 3) if lat else 0, "latency_ms_p95": lat[min(len(lat) - 1, int(0.95 * len(lat)))] if lat else 0,
@@ -79,8 +85,8 @@ def run_suite(make_agent: Callable[[], "object"], cases: List[EvalCase]) -> Dict
 def to_markdown(report: Dict) -> str:
     a = report["aggregate"]
     out = ["| metric | value |", "|---|---|"] + [f"| {k} | {v} |" for k, v in a.items()]
-    out += ["", "| case | status | completed | tools ok | adherent | grounded | steps | tokens |", "|---|---|---|---|---|---|---|---|"]
-    out += [f"| {r['case']} | {r['status']} | {r['completed']} | {r['tool_correct']} | {r['adherent']} | {r['grounded']} | {r['steps']} | {r['tokens']} |" for r in report["rows"]]
+    out += ["", "| case | expected | actual (stop reason) | status ok | tools ok | invariant | adherent | grounded | steps | tokens |", "|---|---|---|---|---|---|---|---|---|---|"]
+    out += [f"| {r['case']} | {r['expected_status']} | {r['status']} ({r['stop_reason']}) | {r['status_ok']} | {r['tool_correct']} | {r['invariant_ok']} | {r['adherent']} | {r['grounded']} | {r['steps']} | {r['tokens']} |" for r in report["rows"]]
     return "\n".join(out)
 
 

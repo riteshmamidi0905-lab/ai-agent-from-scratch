@@ -40,3 +40,28 @@ jobs:
           python-version: "3.12"
       - run: pip install ".[service,dev]"
       - run: python -m unittest discover -s tests -v
+  docker:
+    name: docker compose stack (build, migrate, smoke)
+    runs-on: ubuntu-latest
+    env:
+      POSTGRES_PASSWORD: ci-only-password
+      AGENT_API_TOKEN: ci-only-token
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and start the stack
+        run: docker compose up --build -d
+      - name: Smoke test (readiness, auth, run, SSE, persistence)
+        run: python3 scripts/smoke.py http://localhost:8000
+      - name: Restart the API; the run must still be there (durable state)
+        run: |
+          RID=$(curl -s -H "Authorization: Bearer $AGENT_API_TOKEN" "http://localhost:8000/v1/runs?limit=1" | python3 -c "import sys,json;print(json.load(sys.stdin)[0]['id'])")
+          docker compose restart api
+          for i in $(seq 1 30); do curl -sf http://localhost:8000/readyz >/dev/null && break; sleep 1; done
+          curl -sf -H "Authorization: Bearer $AGENT_API_TOKEN" "http://localhost:8000/v1/runs/$RID" | python3 -c "import sys,json;d=json.load(sys.stdin);assert d['status']=='completed',d;print('run survived restart:',d['id'])"
+      - name: Container health and logs
+        if: always()
+        run: |
+          docker compose ps
+          docker compose logs api --tail 40
+      - run: docker compose down -v
+        if: always()
