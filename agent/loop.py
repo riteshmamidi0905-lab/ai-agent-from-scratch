@@ -17,7 +17,7 @@ from typing import Callable, Optional
 
 from .memory import ConversationMemory
 from .model import Message, ModelProvider, ProviderError
-from .reliability import Budget, IdempotencyCache, LoopDetector, retry_call
+from .reliability import Budget, LoopDetector, retry_call
 from .security import Policy, wrap_untrusted
 from .state import RunState
 from .tools import ToolRegistry, ToolResult
@@ -36,7 +36,6 @@ class Agent:
         self.tracer = tracer or Tracer()
         self.memory = memory or ConversationMemory()
         self.system_prompt, self.retry_attempts, self.sleep, self.loop_threshold = system_prompt, retry_attempts, sleep, loop_threshold
-        self.cache = IdempotencyCache()
 
     # -- one model call, with retries and tracing ---------------------------------------------------------------
     def _model_call(self, state: RunState):
@@ -58,8 +57,13 @@ class Agent:
             r = state.tool_results[key]
             return ToolResult(r["ok"], r["output"], r["error"], r["kind"])
         if tool is not None:
+            needs_approval = tool.level in self.policy.approve_levels and self.policy.approver is not None
+            if needs_approval:
+                self.tracer.emit("approval_required", tool=call.name, level=tool.level, args=call.args)
             ok, why = self.policy.check(call.name, tool.level, call.args)
             self.tracer.emit("policy", tool=call.name, allowed=ok, reason=why)
+            if needs_approval:
+                self.tracer.emit("approval_decision", tool=call.name, approved=ok)
             if not ok:
                 self.tracer.failure("denied", tool=call.name, reason=why)
                 res = ToolResult(False, error=why, kind="denied")

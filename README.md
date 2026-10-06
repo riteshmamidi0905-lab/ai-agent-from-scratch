@@ -1,9 +1,9 @@
 # ai-agent-from-scratch
 
-An AI agent runtime built up one idea at a time, **standard library only** (no framework, no dependencies), so every line can be read and explained. Each module is one concept; `docs/learning-notes/` explains *why* it exists and how to answer the matching interview question.
+An AI agent runtime built up one idea at a time, a **standard-library-only core** (no framework, no dependencies; later service layers add optional dependencies), so every line can be read and explained. Each module is one concept; `docs/learning-notes/` explains *why* it exists and how to answer the matching interview question.
 
 ```
-python3 -m unittest discover -s tests     # 46 tests
+python3 -m unittest discover -s tests     # 52 tests
 python3 examples/run_eval.py              # writes docs/eval-report.md
 ```
 
@@ -28,6 +28,7 @@ python3 examples/run_eval.py              # writes docs/eval-report.md
 ## What is honest about it
 - **No real LLM is used in tests or in the eval report.** `RuleModel` is a rule-based stand-in; `ScriptedModel` replays fixed turns. The eval report therefore measures the *runtime*, not a model.
 - `OpenAICompatProvider` speaks the OpenAI chat-completions shape and is tested against a local HTTP server, **not** against OpenAI/Ollama. Treat it as untested against real vendors until a recorded run exists.
+- See `docs/architecture.md` for invariants and known limits (thread timeouts, estimated tokens, per-run idempotency).
 - Injection scanning is a heuristic; the real protection is the policy/approval/sandbox layer (see note 06).
 - The embedding in `SemanticMemory` is a hashed bag of words, not a learned model.
 

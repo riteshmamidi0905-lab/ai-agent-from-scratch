@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
-from .model import Message, ModelProvider
+from .model import Message, ModelProvider, ProviderError
 from .structured import generate_structured
 from .tools import ToolRegistry
 
@@ -119,6 +119,10 @@ class PlanExecutor:
             self.log.append(f"replanning after {failed.id}")
             ctx = Message("user", f"Task {failed.id} ({failed.tool} {failed.args}) failed: {failed.error}. Completed so far: {results}. "
                                   "Return a corrected plan for the REMAINING work only.")
-            raw, _, _ = generate_structured(self.model, [ctx], PLAN_SCHEMA)
-            new = build_plan(raw, self.registry)
+            try:
+                raw, _, _ = generate_structured(self.model, [ctx], PLAN_SCHEMA)
+                new = build_plan(raw, self.registry)
+            except (ProviderError, PlanError) as e:      # a bad replan must not crash the executor: report and stop
+                self.log.append(f"replan failed: {e}")
+                return tasks
             tasks = [t for t in tasks if t.status == "done"] + new

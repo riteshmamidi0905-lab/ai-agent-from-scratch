@@ -3,7 +3,7 @@ from agent.evals import EvalCase, run_suite, score, to_markdown
 from agent.loop import Agent
 from agent.model import ModelResponse, RuleModel, ScriptedModel, ToolCall
 from agent.planner import PlanError, PlanExecutor, build_plan, topo_order, substitute
-from agent.reliability import IdempotencyCache, LoopDetector, retry_call
+from agent.reliability import LoopDetector, call_signature, retry_call
 from agent.model import ProviderError
 from agent.tools import default_registry
 from agent.trace import Tracer
@@ -63,7 +63,7 @@ class ReliabilityTests(unittest.TestCase):
         self.assertEqual([d.observe("a", {"x": 1}) for _ in range(3)], [False, False, True])
         d2 = LoopDetector(3)
         self.assertFalse(any(d2.observe("a", {"x": i}) for i in range(5)))
-        self.assertEqual(IdempotencyCache.key("t", {"b": 1, "a": 2}), IdempotencyCache.key("t", {"a": 2, "b": 1}))
+        self.assertEqual(call_signature("t", {"b": 1, "a": 2}), call_signature("t", {"a": 2, "b": 1}))
 
 
 class TraceEvalTests(unittest.TestCase):

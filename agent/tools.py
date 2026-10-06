@@ -8,12 +8,13 @@ from __future__ import annotations
 
 import ast
 import operator
+import os
 import threading
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 
 from .structured import validate
-from .security import LEVELS
+from .security import LEVELS, PathSandbox
 from .reliability import EscalationRequired
 
 
@@ -127,3 +128,25 @@ def default_registry() -> ToolRegistry:
                                     "to": {"type": "string", "enum": ["km", "mi", "kg", "lb"]}}, "required": ["value", "from", "to"],
                      "additionalProperties": False}, convert))
     return r
+
+
+def add_file_tools(registry: ToolRegistry, root: str, max_bytes: int = 20000) -> PathSandbox:
+    """Register read_file (read) and write_file (write) confined to `root`. Every path goes through PathSandbox.resolve, so
+    '..', absolute paths and symlinks that leave the root raise PermissionError, which the registry reports as a 'denied' result."""
+    sb = PathSandbox(root)
+
+    def read_file(path: str) -> str:
+        with open(sb.resolve(path), "rb") as f:
+            data = f.read(max_bytes + 1)
+        return data[:max_bytes].decode("utf-8", "replace") + ("\n[truncated]" if len(data) > max_bytes else "")
+
+    def write_file(path: str, text: str) -> str:
+        full = sb.resolve(path)
+        os.makedirs(os.path.dirname(full), exist_ok=True)
+        with open(full, "w") as f:
+            f.write(text)
+        return f"wrote {len(text)} characters"
+
+    registry.register(Tool("read_file", "Read a text file inside the workspace.", {"properties": {"path": {"type": "string"}}, "required": ["path"], "additionalProperties": False}, read_file))
+    registry.register(Tool("write_file", "Write a text file inside the workspace.", {"properties": {"path": {"type": "string"}, "text": {"type": "string"}}, "required": ["path", "text"], "additionalProperties": False}, write_file, level="write", idempotent=False))
+    return sb

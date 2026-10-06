@@ -12,6 +12,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional
 
 from .model import Usage
+from .security import redact
 
 STATUSES = ("running", "completed", "failed", "escalated", "stopped")
 
@@ -49,7 +50,7 @@ class RunState:
         self.status, self.stop_reason, self.final_answer = status, reason, answer
 
     def to_json(self) -> str:
-        d = asdict(self)
+        d = json.loads(redact(json.dumps(asdict(self), default=str)))   # secrets never leave in a serialised run
         d["usage"]["total"] = self.usage.total
         return json.dumps(d, default=str, indent=2)
 

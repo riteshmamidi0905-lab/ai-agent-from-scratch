@@ -7,8 +7,8 @@
 | tool_correctness | 1.0 |
 | instruction_adherence | 1.0 |
 | groundedness | 1.0 |
-| latency_ms_mean | 0.111 |
-| latency_ms_p95 | 0.22 |
+| latency_ms_mean | 0.122 |
+| latency_ms_p95 | 0.248 |
 | tokens_total | 755 |
 
 | case | status | completed | tools ok | adherent | grounded | steps | tokens |

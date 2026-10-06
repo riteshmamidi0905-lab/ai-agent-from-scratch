@@ -30,7 +30,12 @@ class ConversationMemory:
         """Newest-first until the token budget is spent; never starts the window on an orphan tool message; keeps the system prompt."""
         sys_msgs = [m for m in self.messages if m.role == "system"]
         rest = [m for m in self.messages if m.role != "system"]
-        budget = self.max_tokens - sum(estimate_tokens(m.content) for m in sys_msgs)
+        # the first user message is the task: it is pinned so a long run cannot push the objective out of the window
+        first = next((m for m in rest if m.role == "user"), None)
+        pinned = [first] if first is not None else []
+        if first is not None:
+            rest = rest[rest.index(first) + 1:]
+        budget = self.max_tokens - sum(estimate_tokens(m.content) for m in sys_msgs + pinned)
         kept: List[Message] = []
         for m in reversed(rest):
             cost = estimate_tokens(m.content) + 4
@@ -41,7 +46,7 @@ class ConversationMemory:
         kept.reverse()
         while kept and kept[0].role == "tool":      # a tool result without the assistant call that produced it is invalid
             kept.pop(0)
-        return sys_msgs + kept
+        return sys_msgs + pinned + kept
 
 
 class WorkingMemory:
@@ -81,14 +86,18 @@ class PersistentMemory:
 
 
 _WORD = re.compile(r"[a-z0-9]+")
-_DIM = 256
+_DIM = 512
+_STOP = frozenset("a an and are as at be by do does for from how in is it of on or that the this to was what when where which who why with within you your".split())
 
 
 def embed(text: str) -> List[float]:
+    """Hashed bag-of-words (stop words removed), L2-normalised. Deterministic, dependency-free, and weak: it matches shared WORDS,
+    not meaning. A real embedding model would be a drop-in replacement for this one function."""
     v = [0.0] * _DIM
     for w in _WORD.findall(text.lower()):
-        h = int(hashlib.md5(w.encode()).hexdigest(), 16)
-        v[h % _DIM] += 1.0 if (h >> 100) & 1 else -1.0
+        if w in _STOP:
+            continue
+        v[int(hashlib.blake2b(w.encode(), digest_size=8).hexdigest(), 16) % _DIM] += 1.0
     n = math.sqrt(sum(x * x for x in v)) or 1.0
     return [x / n for x in v]
 

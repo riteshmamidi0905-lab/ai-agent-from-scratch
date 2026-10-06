@@ -2,8 +2,9 @@
 
 Models and networks fail in boring, repeated ways. The runtime handles each one explicitly instead of hoping:
   retry_call        bounded retries with exponential backoff, ONLY for errors marked retryable (a 400 will not get better).
-  IdempotencyCache  a tool call with a given id runs at most once; a retried/duplicated call returns the stored result.
-                    Essential for tools with side effects (sending, writing, paying).
+  idempotency       within a run, a tool-call id executes at most once; a duplicated call returns the stored result
+                    (RunState.tool_results, used by the loop). It does NOT dedupe a *new* call id for the same action — a model
+                    that re-asks with a fresh id will run the tool again, so side-effecting tools need their own business key.
   Budget            hard caps on steps and tokens so a confused agent stops instead of burning money.
   LoopDetector      the same tool with the same arguments N times in a row is a loop, not progress.
   EscalationRequired raised when the right move is "ask a human" rather than "try again".
@@ -40,19 +41,9 @@ def retry_call(fn: Callable[[], Any], attempts: int = 3, base_delay: float = 0.2
     raise last  # pragma: no cover
 
 
-class IdempotencyCache:
-    def __init__(self):
-        self._r: Dict[str, Any] = {}
-
-    def get(self, key: str) -> Optional[Any]:
-        return self._r.get(key)
-
-    def put(self, key: str, value: Any) -> None:
-        self._r[key] = value
-
-    @staticmethod
-    def key(name: str, args: Dict[str, Any]) -> str:
-        return name + ":" + json.dumps(args, sort_keys=True)
+def call_signature(name: str, args: Dict[str, Any]) -> str:
+    """Canonical text for 'this tool with these arguments' (key order does not matter)."""
+    return name + ":" + json.dumps(args, sort_keys=True)
 
 
 @dataclass
@@ -74,7 +65,7 @@ class LoopDetector:
 
     def observe(self, name: str, args: Dict[str, Any]) -> bool:
         """True when the identical call has now been made `threshold` times in a row."""
-        sig = IdempotencyCache.key(name, args)
+        sig = call_signature(name, args)
         self.recent.append(sig)
         self.recent = self.recent[-self.threshold:]
         return len(self.recent) == self.threshold and len(set(self.recent)) == 1

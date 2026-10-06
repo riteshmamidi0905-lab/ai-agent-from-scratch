@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 import time
+
+from .security import redact
 from collections import Counter
 from contextlib import contextmanager
 from typing import Any, Dict, List, Optional
@@ -17,6 +19,17 @@ FAILURE_KINDS = ("provider", "network", "malformed", "structured", "tool_error",
                  "injection_blocked", "loop_detected", "step_limit", "token_budget", "escalated")
 
 
+def _clean(v):
+    """Secrets never reach a trace: redact every string in an event, recursively."""
+    if isinstance(v, str):
+        return redact(v)
+    if isinstance(v, dict):
+        return {k: _clean(x) for k, x in v.items()}
+    if isinstance(v, (list, tuple)):
+        return [_clean(x) for x in v]
+    return v
+
+
 class Tracer:
     def __init__(self, run_id: str = "run", sink: Optional[str] = None, clock=time.monotonic):
         self.run_id, self.sink, self.clock = run_id, sink, clock
@@ -24,7 +37,7 @@ class Tracer:
         self._t0 = clock()
 
     def emit(self, type_: str, **fields: Any) -> Dict[str, Any]:
-        ev = {"run": self.run_id, "t": round(self.clock() - self._t0, 6), "type": type_, **fields}
+        ev = _clean({"run": self.run_id, "t": round(self.clock() - self._t0, 6), "type": type_, **fields})
         self.events.append(ev)
         if self.sink:
             with open(self.sink, "a") as f:
